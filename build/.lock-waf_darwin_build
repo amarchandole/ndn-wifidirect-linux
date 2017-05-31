@@ -1,0 +1,9 @@
+argv = ['./waf', 'configure']
+config_cmd = 'configure'
+environ = {'TERM_SESSION_ID': '53EBD7D0-3470-48C7-947D-3E937B54A518', 'SSH_AUTH_SOCK': '/var/folders/dt/8ytyl_t16yq9v2j8mv3wjx280000gn/T//ssh-zJDMRBr1JGXE/agent.3583', 'XPC_SERVICE_NAME': '0', 'TERM_PROGRAM_VERSION': '388.1', 'SHELL': '/bin/bash', 'LOGNAME': 'amar', 'USER': 'amar', 'HOME': '/Users/amar', 'PKG_CONFIG_PATH': '/usr/local/lib/pkgconfig', 'PATH': '/Library/Frameworks/Python.framework/Versions/3.6/bin:/Applications/anaconda/bin:/Applications/anaconda/bin:/opt/local/bin:/opt/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Applications/Wireshark.app/Contents/MacOS', 'TMPDIR': '/var/folders/dt/8ytyl_t16yq9v2j8mv3wjx280000gn/T/', 'TERM_PROGRAM': 'Apple_Terminal', 'LANG': 'en_US.UTF-8', 'TERM': 'vt100', 'Apple_PubSub_Socket_Render': '/private/tmp/com.apple.launchd.lCApR928sL/Render', 'SHLVL': '1', 'OLDPWD': '/Users/amar/Documents/UCLA/Capstone', 'XPC_FLAGS': '0x0', '__CF_USER_TEXT_ENCODING': '0x1F5:0x0:0x0', 'PWD': '/Users/amar/Documents/UCLA/Capstone/ndn-wifidirect-linux', '_': './waf', 'SSH_AGENT_PID': '3584'}
+files = ['/Users/amar/Documents/UCLA/Capstone/ndn-wifidirect-linux/wscript']
+hash = '\x07\xeb\xef\x8f\xce\xc7\xaf_\x1b6/\xaeC\x85\x04|'
+options = {'profile': '', 'force': False, 'verbose': 0, 'no_lock_in_out': '', 'destdir': '', 'zones': '', 'colors': 'auto', 'targets': '', 'out': '', 'progress_bar': 0, 'top': '', 'libdir': None, 'check_cxx_compiler': None, 'bindir': None, 'no_lock_in_top': '', 'files': '', 'no_lock_in_run': '', 'jobs': 4, 'distcheck_args': None, 'prefix': '/usr/local/', 'keep': 0, 'debug': False}
+out_dir = '/Users/amar/Documents/UCLA/Capstone/ndn-wifidirect-linux/build'
+run_dir = '/Users/amar/Documents/UCLA/Capstone/ndn-wifidirect-linux'
+top_dir = '/Users/amar/Documents/UCLA/Capstone/ndn-wifidirect-linux'

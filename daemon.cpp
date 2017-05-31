@@ -336,7 +336,7 @@ int connectDevices() {
 
   while(true) {
     std::cerr << "\n===========================================================" << std::endl;    
-    std::cerr << "Do you wish to connect as a Group Owner (0) or a Daemon (1)?" << std::endl;
+    std::cerr << "Do you wish to connect as a Group Owner (0) or a Non Group Owner (1)?" << std::endl;
     std::cin >> go;
 
     if(go==0) {

@@ -1,0 +1,10 @@
+prefix=/usr/local
+exec_prefix=/usr/local
+libdir=/usr/local/lib
+includedir=/usr/local/include
+
+Name: libndn-cxx
+Description: NDN C++ library with eXperimental eXtensions
+Version: 0.5.1
+Libs: -L${libdir}  -L/usr/local/opt/boost@1.59/lib -L/opt/local/lib -lndn-cxx -lboost_system-mt -lboost_filesystem-mt -lboost_date_time-mt -lboost_iostreams-mt -lboost_regex-mt -lboost_program_options-mt -lboost_chrono-mt -lboost_thread-mt -lboost_log-mt -lboost_log_setup-mt -lcryptopp -lssl -lcrypto -lsqlite3 -lpthread -framework CoreFoundation -framework Security
+Cflags: -I${includedir}  -I/usr/local/opt/boost@1.59/include -I/opt/local/include
