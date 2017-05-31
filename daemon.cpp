@@ -28,6 +28,7 @@
 #include <ndn-cxx/mgmt/nfd/controller.hpp>
 #include <ndn-cxx/mgmt/nfd/status-dataset.hpp>
 #include <boost/thread.hpp>
+#include <unistd.h>
 
 #include <iostream>
 #include <string>
@@ -42,6 +43,7 @@ public:
     , m_scheduler(m_face.getIoService())
     , m_ownIP(std::move(ownIP))
     , m_otherIP(std::move(otherIP))
+    , m_announcePrefixes(std::move(""))
     , m_go(go)
     , m_counter(0)
   {
@@ -173,7 +175,7 @@ public:
     }
   }
 
-  std::string 
+  void 
   onProbeFIB(const std::vector<ndn::nfd::FibEntry>& status)
   {
     std::cerr << "\nonFibStatusRetrieved called" << std::endl;
@@ -206,7 +208,8 @@ public:
       nonLocalPrefixes += "\n";
     }
     //std::cerr << "Interest packet looks like this now:\n" << nonLocalPrefixes << std::endl;
-    return nonLocalPrefixes;
+    m_announcePrefixes = nonLocalPrefixes;
+    std::cerr << "Interest packet looks like this now:\n " << m_announcePrefixes << std::endl;
   }
 
   void
@@ -254,14 +257,15 @@ private:
 
     m_controller.fetch<ndn::nfd::FibDataset>(std::bind(&Daemon::onProbeFIB, this, _1),
                                              std::bind(&Daemon::onStatusTimeout, this));
-
-
+    
+    sleep(1);   
     // create data packet with the same name as interest
     std::shared_ptr<ndn::Data> data = std::make_shared<ndn::Data>(interest.getName());
 
+    std::cerr << "Interest packet data = " << m_announcePrefixes << std::endl;
     // prepare and assign content of the data packet
     std::ostringstream os;
-    os << "Sample data:\n1\n2\n3\n" << std::endl;
+    os << m_announcePrefixes << std::endl;
     std::string content = os.str();
     data->setContent(reinterpret_cast<const uint8_t*>(content.c_str()), content.size());
 
@@ -306,6 +310,7 @@ private:
   ndn::Scheduler m_scheduler;
   std::string m_ownIP;
   std::string m_otherIP;
+  std::string m_announcePrefixes;
   uint64_t m_go;
   uint64_t m_counter;
 };
@@ -343,7 +348,7 @@ int connectDevices() {
       std::cerr << "You chose to be Group Owner!" << std::endl;
       break;
     } else if (go==1) {
-      std::cerr << "You chose to be Daemon!" << std::endl;
+      std::cerr << "You chose to be Non group owner!" << std::endl;
       break;
     } else {
       std::cerr << "Incorrect option selected. Reselect!" << std::endl;
