@@ -37,7 +37,7 @@
 class Daemon
 {
 public:
-  Daemon(ndn::Face& face, std::string ownIP, std::string otherIP, uint64_t go)
+  Daemon(ndn::Face& face, std::string ownIP, std::string otherIP, uint64_t go, int tempFaceId)
     : m_face(face)
     , m_controller(m_face, m_keyChain)
     , m_baseName("/localhop/wifidirect")
@@ -61,7 +61,9 @@ public:
     // This allows you to send data to this node, if any application has data for this name.
     std::cerr << "\n===========================================================" << std::endl;    
     std::cerr << "Adding route:" << std::endl;    
-    this->addRoute(m_otherIP);
+    std::string remoteHostIP = "/localhop/wifidirect/"+m_otherIP;
+    std::cerr << "Remote host IP is " << remoteHostIP << std::endl;
+    this->addRoute(remoteHostIP, m_tempFaceId);
 
     m_controller.start<ndn::nfd::FaceUpdateCommand>(
       ndn::nfd::ControlParameters()
@@ -134,34 +136,6 @@ public:
       {
          std::cerr << "FAILURE: " << resp.getText() << std::endl;
       });
-  }
-
-  void
-  addRoute(std::string IP, uint64_t m_tempFaceId)
-  {
-    ndn::nfd::ControlParameters params;
-    std::string remoteHostIP = "/localhop/wifidirect/"+IP;
-    std::cerr << "Remote host IP is " << remoteHostIP << std::endl;
-    params.setName(remoteHostIP);
-
-    //set the FaceID of the face created towards the WiFi direct interface
-    params.setFaceId(m_tempFaceId);
-    params.setExpirationPeriod(ndn::time::seconds(100));
-
-    ndn::nfd::CommandOptions options;
-    //options.setPrefix("");
-
-    m_controller.start<ndn::nfd::RibRegisterCommand>
-      (params, [&] (const ndn::nfd::ControlParameters&) 
-      {
-        std::cerr << "Successfully created a route" << std::endl;
-      },[&] (const ndn::nfd::ControlResponse& resp) 
-      {
-         std::cerr << "FAILURE: " << resp.getText() << std::endl;
-      });
-
-    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
-                                                                std::bind(&Daemon::onStatusTimeout, this));
   }
 
   //uses prefix to register and the face ID
@@ -354,7 +328,7 @@ private:
   std::string m_otherIP;
   uint64_t m_go;
   uint64_t m_counter;
-  uint64_t m_tempFaceId;
+  int m_tempFaceId;
 };
 
 
@@ -412,7 +386,7 @@ int connectDevices() {
 int
 main(int argc, char** argv)
 {
-  uint64_t tempFaceId;
+  int tempFaceId;
 
   std::cerr << "Enter face ID for interface wlx74da388f5319: " << std::endl;
   std::cin >> tempFaceId;
