@@ -46,6 +46,7 @@ public:
     , m_otherIP(std::move(otherIP))
     , m_go(go)
     , m_counter(0)
+    , m_tempFaceId(tempFaceId)
   {
     std::cerr << "\n===========================================================" << std::endl;    
     std::cerr << "Daemon constructor:" << std::endl;
@@ -68,7 +69,7 @@ public:
       std::bind(&Daemon::onEnableLocalFieldsSuccess, this),
       std::bind(&Daemon::onEnableLocalFieldsError, this, _1));
 
-    if(m_go == 0)
+    //if(m_go == 0)
       m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::sendProbe, this));
 
     // std::cerr << "\n===========================================================" << std::endl;    
@@ -136,7 +137,7 @@ public:
   }
 
   void
-  addRoute(std::string IP)
+  addRoute(std::string IP, uint64_t m_tempFaceId)
   {
     ndn::nfd::ControlParameters params;
     std::string remoteHostIP = "/localhop/wifidirect/"+IP;
@@ -144,7 +145,7 @@ public:
     params.setName(remoteHostIP);
 
     //set the FaceID of the face created towards the WiFi direct interface
-    //params.setFaceId(1);
+    params.setFaceId(m_tempFaceId);
     params.setExpirationPeriod(ndn::time::seconds(100));
 
     ndn::nfd::CommandOptions options;
@@ -154,11 +155,33 @@ public:
       (params, [&] (const ndn::nfd::ControlParameters&) 
       {
         std::cerr << "Successfully created a route" << std::endl;
+      },[&] (const ndn::nfd::ControlResponse& resp) 
+      {
+         std::cerr << "FAILURE: " << resp.getText() << std::endl;
+      });
 
-        m_scheduler.scheduleEvent(ndn::time::seconds(100), [] 
-        {
-            std::cerr << "DONE" << std::endl;
-        });
+    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
+                                                                std::bind(&Daemon::onStatusTimeout, this));
+  }
+
+  //uses prefix to register and the face ID
+  void
+  addRoute(std::string prefix, uint64_t faceId)
+  {
+    ndn::nfd::ControlParameters params;
+    params.setName(prefix);
+
+    //set the FaceID of the face created towards the WiFi direct interface
+    params.setFaceId(faceId);
+    params.setExpirationPeriod(ndn::time::seconds(100));
+
+    ndn::nfd::CommandOptions options;
+    //options.setPrefix("");
+
+    m_controller.start<ndn::nfd::RibRegisterCommand>
+      (params, [&] (const ndn::nfd::ControlParameters&) 
+      {
+        //std::cerr << "Successfully created a route" << std::endl;
       },[&] (const ndn::nfd::ControlResponse& resp) 
       {
          std::cerr << "FAILURE: " << resp.getText() << std::endl;
@@ -185,12 +208,6 @@ public:
 
     for (auto const& fibEntry : status) {
       std::cerr << fibEntry.getPrefix() << std::endl;
-      // if (fibEntry.getPrefix() == m_localhopFibEntry) {
-      //   isConnectedToHub = true;
-      // }
-      // else if (fibEntry.getPrefix() == m_adhocFibEntry) {
-      //   isConnectedToAdhoc = true;
-      // }
     }
   }
 
@@ -214,9 +231,6 @@ public:
         }
       }
     }
-
-    prefixesToReturnStr += std::to_string(prefixesToReturn.size());
-    prefixesToReturnStr += "\n";
 
     for ( auto &i : prefixesToReturn ) 
     {
@@ -283,7 +297,7 @@ private:
                            std::bind(&Daemon::onData, this, _2),
                            std::bind(&Daemon::onTimeout, this, _1));
 
-    if(m_go == 0)
+    //if(m_go == 0)
       m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::sendProbe, this));
   }
 
@@ -305,10 +319,19 @@ private:
   {
     //std:: string dataReceived;
     //dataReceived = reinterpret_cast<const char*>(data.getContent().value());
-      //reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size()
-    std::cerr << "<< Received data: \n"
-              << data.getContent().value()
-              << std::endl;
+    //reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size()
+
+    const ndn::Block& content = data.getContent();
+    std::istringstream newPrefixesFromNeighbor(ndn::encoding::readString (content));
+    std::string line;
+    auto incomingFaceIdTag = data.getTag<ndn::lp::IncomingFaceIdTag>();
+    
+    std::cerr << "<< Received data: \n";
+    while (std::getline(newPrefixesFromNeighbor, line)) {
+      std::cout << line << std::endl;
+      if(line[0]=='/')
+        addRoute(line, *incomingFaceIdTag);
+    }
   }
 
   void
@@ -331,6 +354,7 @@ private:
   std::string m_otherIP;
   uint64_t m_go;
   uint64_t m_counter;
+  uint64_t m_tempFaceId;
 };
 
 
@@ -341,7 +365,9 @@ getOwnIP()
 {
   //char *IP = "fe80::76da:38ff:fe8d:89ab";
   //std::string IP = "fe80::76da:38ff:fe8f:5319";
-  std::string IP = "GOaaaaaaaaaaaaaaaaaa";
+  //std::string IP = "GOaaaaaaaaaaaaaaaaaa";
+
+  std::string IP = "fe80::76da:38ff:fe8d:89ab";
   return IP;
 }
 
@@ -350,7 +376,9 @@ getOtherIP()
 {
   //char *IP = "fe80::76da:38ff:fe8d:89ab";
   //std::string IP = "fe80::76da:38ff:fe8d:89ab";
-  std::string IP = "NonGObbbbbbbbbbbbbbb";
+  //std::string IP = "NonGObbbbbbbbbbbbbbb";
+  
+  std::string IP = "fe80::76da:38ff:fe8f:5319";
   return IP;
 }
 
@@ -372,8 +400,10 @@ int connectDevices() {
       std::cerr << "Incorrect option selected. Reselect!" << std::endl;
     }
   } 
-  //system("/Users/amar/Desktop/a.out 1 2 3");
 
+  //system("/home/ubuntu/wpa_supplicant-2.6/wpa_supplicant/wpa_supplicant -Dnl80211 -c p2p.conf -i wlan1");
+  //sleep(3);
+  //system("/home/ubuntu/wpa_supplicant-2.6/wpa_supplicant/wpa_cli");
   return go;
 }
 
@@ -381,6 +411,11 @@ int connectDevices() {
 int
 main(int argc, char** argv)
 {
+  uint64_t tempFaceId;
+
+  std::cerr << "Enter face ID for interface wlx74da388f5319: " << std::endl;
+  std::cin >> tempFaceId;
+
   try {
     //go is 1 if this device is a Group Owner
     int go = connectDevices();
@@ -396,7 +431,7 @@ main(int argc, char** argv)
     }
 
     // create daemon instance
-    Daemon daemon(face, ownIP, otherIP, go);
+    Daemon daemon(face, ownIP, otherIP, go, tempFaceId);
 
     // start processing loop (it will block forever)
     face.processEvents();
