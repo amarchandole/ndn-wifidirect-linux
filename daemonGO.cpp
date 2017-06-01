@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-#define SCAN_FIB_INTERVAL 5
+#define SCAN_FIB_INTERVAL 20
 
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
 #include <ndn-cxx/data.hpp>
 #include <ndn-cxx/security/key-chain.hpp>
 
-#include <ndn-cxx/lp/tags.hpp>
 #include <ndn-cxx/name.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
 #include <ndn-cxx/mgmt/nfd/fib-entry.hpp>
@@ -44,6 +43,7 @@ public:
     , m_scheduler(m_face.getIoService())
     , m_ownIP(std::move(ownIP))
     , m_otherIP(std::move(otherIP))
+    , m_announcePrefixes(std::move(""))
     , m_go(go)
     , m_counter(0)
   {
@@ -62,31 +62,12 @@ public:
     std::cerr << "Adding route:" << std::endl;    
     this->addRoute(m_otherIP);
 
-    m_controller.start<ndn::nfd::FaceUpdateCommand>(
-      ndn::nfd::ControlParameters()
-        .setFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED, true),
-      std::bind(&Daemon::onEnableLocalFieldsSuccess, this),
-      std::bind(&Daemon::onEnableLocalFieldsError, this, _1));
-
     if(m_go == 0)
       m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::sendProbe, this));
 
     // std::cerr << "\n===========================================================" << std::endl;    
     // std::cerr << "\n\nAdding face:" << std::endl;    
     // this->addFace();
-  }
-
-  void
-  onEnableLocalFieldsSuccess()
-  {
-  }
-
-  void
-  onEnableLocalFieldsError(const ndn::nfd::ControlResponse& response)
-  {
-    std::cerr << "Couldn't enable local fields (code: " +
-                                std::to_string(response.getCode()) + ", info: " + response.getText() +
-                                ")" << std::endl;
   }
 
   void
@@ -195,55 +176,40 @@ public:
   }
 
   void 
-  onProbeRIB(const std::vector<ndn::nfd::RibEntry>& status, const ndn::Name& interestName, uint64_t incomingFaceId)
+  onProbeFIB(const std::vector<ndn::nfd::FibEntry>& status)
   {
-    std::vector<std::string> prefixesToReturn;
-    std::string prefixesToReturnStr = "";
+    std::cerr << "\nonFibStatusRetrieved called" << std::endl;
+
+    std::vector<std::string> nonLocalPrefixesVector;
+    std::string nonLocalPrefixes = "";
     std::string local1 = "/localhost";
     std::string local2 = "/localhop/wifidirect";
 
-    for (auto const& ribEntry : status) {
-      if(ribEntry.getRoutes()[0].getFaceId() != incomingFaceId) {
-
+    for (auto const& fibEntry : status) {
+      std::stringstream sstream;  
+      sstream << fibEntry.getPrefix();
+      std::string s = sstream.str();
+      if (s.compare(0, local1.length(), local1) == 0 || s.compare(0, local2.length(), local2) == 0) {
+        std::cerr << "Skipping local entry " << fibEntry.getPrefix() << std::endl;
+      }
+      else {
         std::stringstream sstream;  
-        sstream << ribEntry.getName();
+        sstream << fibEntry.getPrefix();
         std::string s = sstream.str();
-
-        if (!(s.compare(0, local1.length(), local1) == 0) && !(s.compare(0, local2.length(), local2) == 0)) {
-          prefixesToReturn.push_back(s);
-        }
+        nonLocalPrefixesVector.push_back(s);
       }
     }
 
-    prefixesToReturnStr += std::to_string(prefixesToReturn.size());
-    prefixesToReturnStr += "\n";
+    nonLocalPrefixes += std::to_string(nonLocalPrefixesVector.size());
+    nonLocalPrefixes += "\n";
 
-    for ( auto &i : prefixesToReturn ) 
-    {
-      prefixesToReturnStr += i;
-      prefixesToReturnStr += "\n";
+    for ( auto &i : nonLocalPrefixesVector ) {
+      nonLocalPrefixes += i;
+      nonLocalPrefixes += "\n";
     }
-
-    // create data packet with the same name as interest
-    std::shared_ptr<ndn::Data> data = std::make_shared<ndn::Data>(interestName);
-    
-
-    // prepare and assign content of the data packet
-    std::ostringstream os;
-    os << prefixesToReturnStr << std::endl;
-    std::string content = os.str();
-
-    //std::cerr << "\nInterest packet now looks like: " << content << std::endl;
-    data->setContent(reinterpret_cast<const uint8_t*>(content.c_str()), content.size());
-
-    // set metainfo parameters
-    data->setFreshnessPeriod(ndn::time::seconds(10));
-
-    // sign data packet
-    m_keyChain.sign(*data);
-
-    // make data packet available for fetching
-    m_face.put(*data);
+    //std::cerr << "Interest packet looks like this now:\n" << nonLocalPrefixes << std::endl;
+    m_announcePrefixes = nonLocalPrefixes;
+    std::cerr << "Interest packet looks like this now:\n " << m_announcePrefixes << std::endl;
   }
 
   void
@@ -289,23 +255,41 @@ private:
   {
     std::cerr << "<< Interest received: " << interest << std::endl;
 
-    const ndn::Name& name = interest.getName();
-    auto incomingFaceIdTag = interest.getTag<ndn::lp::IncomingFaceIdTag>();
-
-    if(incomingFaceIdTag != NULL)
-        m_controller.fetch<ndn::nfd::RibDataset>(std::bind(&Daemon::onProbeRIB, this, _1, name, *incomingFaceIdTag),
+    m_controller.fetch<ndn::nfd::FibDataset>(std::bind(&Daemon::onProbeFIB, this, _1),
                                              std::bind(&Daemon::onStatusTimeout, this));
+    
+    sleep(1);   
+    // create data packet with the same name as interest
+    std::shared_ptr<ndn::Data> data = std::make_shared<ndn::Data>(interest.getName());
+
+    std::cerr << "Interest packet data = " << m_announcePrefixes << std::endl;
+    // prepare and assign content of the data packet
+    std::ostringstream os;
+    os << m_announcePrefixes << std::endl;
+    std::string content = os.str();
+    data->setContent(reinterpret_cast<const uint8_t*>(content.c_str()), content.size());
+
+    // set metainfo parameters
+    data->setFreshnessPeriod(ndn::time::seconds(10));
+
+    // sign data packet
+    m_keyChain.sign(*data);
+
+    // make data packet available for fetching
+    m_face.put(*data);
   }
 
   void
   onData(const ndn::Data& data)
   {
-    //std:: string dataReceived;
-    //dataReceived = reinterpret_cast<const char*>(data.getContent().value());
-      //reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size()
     std::cerr << "<< Received data: \n"
-              << data.getContent().value()
+              << std::string(reinterpret_cast<const char*>(data.getContent().value()),
+                                                           data.getContent().value_size())
               << std::endl;
+
+    if (data.getName().get(-1).toSequenceNumber() >= 10) {
+      return;
+    }
   }
 
   void
@@ -326,6 +310,7 @@ private:
   ndn::Scheduler m_scheduler;
   std::string m_ownIP;
   std::string m_otherIP;
+  std::string m_announcePrefixes;
   uint64_t m_go;
   uint64_t m_counter;
 };
@@ -369,7 +354,7 @@ int connectDevices() {
       std::cerr << "Incorrect option selected. Reselect!" << std::endl;
     }
   } 
-  //system("/Users/amar/Desktop/a.out 1 2 3");
+  system("/Users/amar/Desktop/a.out 1 2 3");
 
   return go;
 }
