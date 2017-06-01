@@ -65,6 +65,9 @@ public:
     std::cerr << "Remote host IP is " << remoteHostIP << std::endl;
     this->addRoute(remoteHostIP, m_tempFaceId);
 
+    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
+                                                                std::bind(&Daemon::onStatusTimeout, this));
+    
     m_controller.start<ndn::nfd::FaceUpdateCommand>(
       ndn::nfd::ControlParameters()
         .setFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED, true),
@@ -160,15 +163,12 @@ public:
       {
          std::cerr << "FAILURE: " << resp.getText() << std::endl;
       });
-
-    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
-                                                                std::bind(&Daemon::onStatusTimeout, this));
   }
 
   void
   onStatusRetrieved(const ndn::nfd::ForwarderStatus& status)
   {
-    std::cerr << "\nonStatusRetrieved called" << std::endl;
+    std::cerr << "onStatusRetrieved called" << std::endl;
     m_controller.fetch<ndn::nfd::FibDataset>(std::bind(&Daemon::onFibStatusRetrieved, this, _1),
                                              std::bind(&Daemon::onStatusTimeout, this));
 
@@ -278,7 +278,7 @@ private:
   void
   onInterest(const ndn::Interest& interest)
   {
-    std::cerr << "<< Interest received: " << interest << std::endl;
+    std::cerr << "\n<< Interest received: " << interest << std::endl;
 
     const ndn::Name& name = interest.getName();
     auto incomingFaceIdTag = interest.getTag<ndn::lp::IncomingFaceIdTag>();
@@ -300,12 +300,14 @@ private:
     std::string line;
     auto incomingFaceIdTag = data.getTag<ndn::lp::IncomingFaceIdTag>();
     
-    std::cerr << "<< Received data: \n";
+    std::cerr << "\n<< Received data: \n";
     while (std::getline(newPrefixesFromNeighbor, line)) {
       std::cout << line << std::endl;
       if(line[0]=='/')
         addRoute(line, *incomingFaceIdTag);
     }
+    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
+                                                                std::bind(&Daemon::onStatusTimeout, this));
   }
 
   void

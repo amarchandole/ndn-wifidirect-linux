@@ -60,7 +60,12 @@ public:
     // This allows you to send data to this node, if any application has data for this name.
     std::cerr << "\n===========================================================" << std::endl;    
     std::cerr << "Adding route:" << std::endl;    
-    this->addRoute(m_otherIP);
+    std::string remoteHostIP = "/localhop/wifidirect/"+m_otherIP;
+    std::cerr << "Remote host IP is " << remoteHostIP << std::endl;
+    this->addRoute(remoteHostIP, 0);
+
+    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
+                                                                std::bind(&Daemon::onStatusTimeout, this));
 
     m_controller.start<ndn::nfd::FaceUpdateCommand>(
       ndn::nfd::ControlParameters()
@@ -135,34 +140,6 @@ public:
       });
   }
 
-  void
-  addRoute(std::string IP)
-  {
-    ndn::nfd::ControlParameters params;
-    std::string remoteHostIP = "/localhop/wifidirect/"+IP;
-    std::cerr << "Remote host IP is " << remoteHostIP << std::endl;
-    params.setName(remoteHostIP);
-
-    //set the FaceID of the face created towards the WiFi direct interface
-    //params.setFaceId(1);
-    params.setExpirationPeriod(ndn::time::seconds(100));
-
-    ndn::nfd::CommandOptions options;
-    //options.setPrefix("");
-
-    m_controller.start<ndn::nfd::RibRegisterCommand>
-      (params, [&] (const ndn::nfd::ControlParameters&) 
-      {
-        std::cerr << "Successfully created a route" << std::endl;
-      },[&] (const ndn::nfd::ControlResponse& resp) 
-      {
-         std::cerr << "FAILURE: " << resp.getText() << std::endl;
-      });
-
-    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
-                                                                std::bind(&Daemon::onStatusTimeout, this));
-  }
-
   //uses prefix to register and the face ID
   void
   addRoute(std::string prefix, uint64_t faceId)
@@ -171,7 +148,8 @@ public:
     params.setName(prefix);
 
     //set the FaceID of the face created towards the WiFi direct interface
-    params.setFaceId(faceId);
+    if(faceId != 0)
+      params.setFaceId(faceId);
     params.setExpirationPeriod(ndn::time::seconds(100));
 
     ndn::nfd::CommandOptions options;
@@ -185,15 +163,12 @@ public:
       {
          std::cerr << "FAILURE: " << resp.getText() << std::endl;
       });
-
-    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
-                                                                std::bind(&Daemon::onStatusTimeout, this));
   }
 
   void
   onStatusRetrieved(const ndn::nfd::ForwarderStatus& status)
   {
-    std::cerr << "\nonStatusRetrieved called" << std::endl;
+    std::cerr << "onStatusRetrieved called" << std::endl;
     m_controller.fetch<ndn::nfd::FibDataset>(std::bind(&Daemon::onFibStatusRetrieved, this, _1),
                                              std::bind(&Daemon::onStatusTimeout, this));
 
@@ -290,7 +265,7 @@ private:
     m_counter++;
 
     ndn::Name nextName = ndn::Name(probeFormat);
-    std::cerr << ">> Sending probe interest: " << probeFormat << std::endl;
+    std::cerr << "\n>> Sending probe interest: " << probeFormat << std::endl;
 
     m_face.expressInterest(ndn::Interest(nextName).setMustBeFresh(true),
                            std::bind(&Daemon::onData, this, _2),
@@ -303,7 +278,7 @@ private:
   void
   onInterest(const ndn::Interest& interest)
   {
-    std::cerr << "<< Interest received: " << interest << std::endl;
+    std::cerr << "\n<< Interest received: " << interest << std::endl;
 
     const ndn::Name& name = interest.getName();
     auto incomingFaceIdTag = interest.getTag<ndn::lp::IncomingFaceIdTag>();
@@ -325,12 +300,15 @@ private:
     std::string line;
     auto incomingFaceIdTag = data.getTag<ndn::lp::IncomingFaceIdTag>();
     
-    std::cerr << "<< Received data: \n";
+    std::cerr << "\n<< Received data: \n";
     while (std::getline(newPrefixesFromNeighbor, line)) {
       std::cout << line << std::endl;
       if(line[0]=='/')
         addRoute(line, *incomingFaceIdTag);
     }
+
+    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
+                                                                std::bind(&Daemon::onStatusTimeout, this)); 
   }
 
   void
