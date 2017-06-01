@@ -48,6 +48,9 @@ public:
     , m_counter(0)
     , m_tempFaceId(tempFaceId)
   {
+    std::cerr << ">> Own IP: " << m_ownIP << std::endl;
+    std::cerr << ">> Other IP: " << m_otherIP << std::endl;
+
     std::cerr << "\n===========================================================" << std::endl;    
     std::cerr << "Daemon constructor:" << std::endl;
     this->printRole(m_go);
@@ -67,7 +70,7 @@ public:
 
     m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
                                                                 std::bind(&Daemon::onStatusTimeout, this));
-    
+
     m_controller.start<ndn::nfd::FaceUpdateCommand>(
       ndn::nfd::ControlParameters()
         .setFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED, true),
@@ -149,7 +152,8 @@ public:
     params.setName(prefix);
 
     //set the FaceID of the face created towards the WiFi direct interface
-    params.setFaceId(faceId);
+    if(faceId != 0)
+      params.setFaceId(faceId);
     params.setExpirationPeriod(ndn::time::seconds(100));
 
     ndn::nfd::CommandOptions options;
@@ -389,7 +393,7 @@ main(int argc, char** argv)
 {
   int tempFaceId;
 
-  std::cerr << "Enter face ID for interface wlx74da388f5319: " << std::endl;
+  std::cerr << "Enter face ID for interface wlan1: " << std::endl;
   std::cin >> tempFaceId;
 
   try {
@@ -399,12 +403,6 @@ main(int argc, char** argv)
     std::string otherIP = getOtherIP();
 
     ndn::Face face;
-
-    if(go==1) {
-      std::string temp = ownIP;
-      ownIP = otherIP;
-      otherIP = temp;
-    }
 
     // create daemon instance
     Daemon daemon(face, ownIP, otherIP, go, tempFaceId);
