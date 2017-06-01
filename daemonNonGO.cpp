@@ -148,13 +148,16 @@ public:
   void
   addRoute(std::string prefix, uint64_t faceId)
   {
+    std::string local = "/localhop/wifidirect";
     ndn::nfd::ControlParameters params;
     params.setName(prefix);
 
     //set the FaceID of the face created towards the WiFi direct interface
     if(faceId != 0)
       params.setFaceId(faceId);
-    params.setExpirationPeriod(ndn::time::seconds(100));
+
+    if (!(prefix.compare(0, local.length(), local) == 0))
+      params.setExpirationPeriod(ndn::time::seconds(100));
 
     ndn::nfd::CommandOptions options;
     //options.setPrefix("");
