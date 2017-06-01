@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define SCAN_FIB_INTERVAL 5
+#define SCAN_FIB_INTERVAL 15
 
 #include <ndn-cxx/face.hpp>
 #include <ndn-cxx/interest.hpp>
@@ -282,6 +282,9 @@ private:
     m_face.expressInterest(ndn::Interest(nextName).setMustBeFresh(true),
                            std::bind(&Daemon::onData, this, _2),
                            std::bind(&Daemon::onTimeout, this, _1));
+
+    if(m_go == 0)
+      m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::sendProbe, this));
   }
 
   void
