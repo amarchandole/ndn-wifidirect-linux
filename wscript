@@ -23,3 +23,9 @@ def build (bld):
     	    features=['cxx', 'cxxprogram'],
         	source='daemonGO.cpp',
         	use='NDN_CXX')
+
+    if len(bld.path.ant_glob('daemonNonGO.cpp')):
+	    bld(target='daemonNonGO',
+    	    features=['cxx', 'cxxprogram'],
+        	source='daemonNonGO.cpp',
+        	use='NDN_CXX')
