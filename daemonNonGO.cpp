@@ -37,7 +37,7 @@
 class Daemon
 {
 public:
-  Daemon(ndn::Face& face, std::string ownIP, std::string otherIP, uint64_t go, int tempFaceId)
+  Daemon(ndn::Face& face, std::string ownIP, std::string otherIP, uint64_t go, std::string interfaceName)
     : m_face(face)
     , m_controller(m_face, m_keyChain)
     , m_baseName("/localhop/wifidirect")
@@ -46,43 +46,11 @@ public:
     , m_otherIP(std::move(otherIP))
     , m_go(go)
     , m_counter(0)
-    , m_tempFaceId(tempFaceId)
   {
-    std::cerr << ">> Own IP: " << m_ownIP << std::endl;
-    std::cerr << ">> Other IP: " << m_otherIP << std::endl;
-
-    std::cerr << "\n===========================================================" << std::endl;    
-    std::cerr << "Daemon constructor:" << std::endl;
     this->printRole(m_go);
+    m_controller.fetch<ndn::nfd::FaceDataset>(std::bind(&Daemon::onFaceStatusReceived, this, _1, interfaceName),
+                                             std::bind(&Daemon::onStatusTimeout, this));
 
-    // Register own IP as a prefix as soon as daemon starts running, so that you can receive the data sent to you.
-    std::cerr << "\n===========================================================" << std::endl;    
-    std::cerr << "Registering prefix:" << std::endl;    
-    this->registerPrefix(m_ownIP);
-
-    // Add route to other node's IP as soon as daemon starts running (assume that connection is done at this stage.
-    // This allows you to send data to this node, if any application has data for this name.
-    std::cerr << "\n===========================================================" << std::endl;    
-    std::cerr << "Adding route:" << std::endl;    
-    std::string remoteHostIP = "/localhop/wifidirect/"+m_otherIP;
-    std::cerr << "Remote host IP is " << remoteHostIP << std::endl;
-    this->addRoute(remoteHostIP, m_tempFaceId);
-
-    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
-                                                                std::bind(&Daemon::onStatusTimeout, this));
-
-    m_controller.start<ndn::nfd::FaceUpdateCommand>(
-      ndn::nfd::ControlParameters()
-        .setFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED, true),
-      std::bind(&Daemon::onEnableLocalFieldsSuccess, this),
-      std::bind(&Daemon::onEnableLocalFieldsError, this, _1));
-
-    //if(m_go == 0)
-      m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::sendProbe, this));
-
-    // std::cerr << "\n===========================================================" << std::endl;    
-    // std::cerr << "\n\nAdding face:" << std::endl;    
-    // this->addFace();
   }
 
   void
@@ -93,7 +61,7 @@ public:
   void
   onEnableLocalFieldsError(const ndn::nfd::ControlResponse& response)
   {
-    std::cerr << "Couldn't enable local fields (code: " +
+    std::cerr << "> Couldn't enable local fields (code: " +
                                 std::to_string(response.getCode()) + ", info: " + response.getText() +
                                 ")" << std::endl;
   }
@@ -111,19 +79,21 @@ public:
   void
   registerPrefix(std::string IP)
   {
-    std::cerr << "\nsetInterestFilter (and also set a prefix for the interest to be received):" << std::endl;
-
     std::stringstream ss;
     ss << m_baseName << "/" << IP;
     std::string prefix = ss.str();
+
+    std::cerr << "\n======================================================================================================================" << std::endl;    
+    std::cerr << "> Registering "<< prefix <<" as prefix (to receive packets meant for this node)." << std::endl;
+
     
     m_face.setInterestFilter(prefix,
                              std::bind(&Daemon::onInterest, this, _2),
                              std::bind([] {
-                                 std::cerr << "Prefix registered: " << std::endl;
+                                 //std::cerr << "Prefix registered: " << std::endl;
                                }),
                              [] (const ndn::Name& prefix, const std::string& reason) {
-                               std::cerr << "Failed to register prefix: " << reason << std::endl;
+                               std::cerr << "> Failed to register prefix: " << reason << std::endl;
                              });
   }
 
@@ -148,16 +118,16 @@ public:
   void
   addRoute(std::string prefix, uint64_t faceId)
   {
-    std::string local = "/localhop/wifidirect";
     ndn::nfd::ControlParameters params;
     params.setName(prefix);
 
     //set the FaceID of the face created towards the WiFi direct interface
-    if(faceId != 0)
+    if(faceId != (uint64_t)-1) {
+      std::cerr << "> Registering " << prefix << " with nexthop FaceID " << faceId << " to FIB." << std::endl;
       params.setFaceId(faceId);
+    }
 
-    if (!(prefix.compare(0, local.length(), local) == 0))
-      params.setExpirationPeriod(ndn::time::seconds(100));
+    params.setExpirationPeriod(ndn::time::seconds(100));
 
     ndn::nfd::CommandOptions options;
     //options.setPrefix("");
@@ -168,14 +138,13 @@ public:
         //std::cerr << "Successfully created a route" << std::endl;
       },[&] (const ndn::nfd::ControlResponse& resp) 
       {
-         std::cerr << "FAILURE: " << resp.getText() << std::endl;
+         std::cerr << "> FAILURE: " << resp.getText() << std::endl;
       });
   }
 
   void
   onStatusRetrieved(const ndn::nfd::ForwarderStatus& status)
   {
-    std::cerr << "onStatusRetrieved called" << std::endl;
     m_controller.fetch<ndn::nfd::FibDataset>(std::bind(&Daemon::onFibStatusRetrieved, this, _1),
                                              std::bind(&Daemon::onStatusTimeout, this));
 
@@ -183,9 +152,54 @@ public:
   }
 
   void
+  onFaceStatusReceived(const std::vector<ndn::nfd::FaceStatus>& status, std::string interfaceName)
+  { 
+    int localFaceID = -1;
+
+    for (auto const& faceEntry : status) {
+      std::size_t found = faceEntry.getLocalUri().compare("dev://"+interfaceName);
+      if(found == 0) {
+        localFaceID = faceEntry.getFaceId();
+        break;
+      }
+    }
+
+    if(localFaceID == -1) {
+      std::cerr << "> Error: You entered incorrect interface name: " << interfaceName << std::endl;
+      return;
+    }
+    
+    // Register own IP as a prefix as soon as daemon starts running, so that you can receive the data sent to you.    
+    this->registerPrefix(m_ownIP);
+
+    // Add route to other node's IP as soon as daemon starts running (assume that connection is done at this stage.
+    // This allows you to send data to this node, if any application has data for this name.
+
+    std::string remoteHostIP = "/localhop/wifidirect/"+m_otherIP;
+    std::cerr << "> Adding route " << remoteHostIP << " to enable sending data to the other node." << std::endl;
+    this->addRoute(remoteHostIP, localFaceID);
+
+    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
+                                                                std::bind(&Daemon::onStatusTimeout, this));
+
+    m_controller.start<ndn::nfd::FaceUpdateCommand>(
+      ndn::nfd::ControlParameters()
+        .setFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED, true),
+      std::bind(&Daemon::onEnableLocalFieldsSuccess, this),
+      std::bind(&Daemon::onEnableLocalFieldsError, this, _1));
+
+    //if(m_go == 0)
+      m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::sendProbe, this));
+
+    // std::cerr << "\n===========================================================" << std::endl;    
+    // std::cerr << "\n\nAdding face:" << std::endl;    
+    // this->addFace();
+  }
+
+  void
   onFibStatusRetrieved(const std::vector<ndn::nfd::FibEntry>& status)
   {
-    std::cerr << "\nonFibStatusRetrieved called" << std::endl;
+    std::cerr << "\n> Current FIB entries: " << std::endl;
 
     for (auto const& fibEntry : status) {
       std::cerr << fibEntry.getPrefix() << std::endl;
@@ -254,7 +268,7 @@ private:
   void
   requestNfdStatus()
   {
-    std::cerr << "\nrequestNfdStatus called" << std::endl;
+    //std::cerr << "\nrequestNfdStatus called" << std::endl;
     m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
                                                                 std::bind(&Daemon::onStatusTimeout, this));
   }
@@ -268,11 +282,11 @@ private:
     std::stringstream ss;
     ss << m_baseName << "/" << m_otherIP << "/" << m_ownIP << "/probe" << m_counter;
     std::string probeFormat = ss.str();
-  
+
     m_counter++;
 
     ndn::Name nextName = ndn::Name(probeFormat);
-    std::cerr << "\n\n>> Sending probe interest: " << probeFormat << std::endl;
+    std::cerr << "\n> Sending probe interest: " << probeFormat << std::endl;
 
     m_face.expressInterest(ndn::Interest(nextName).setMustBeFresh(true),
                            std::bind(&Daemon::onData, this, _2),
@@ -285,7 +299,8 @@ private:
   void
   onInterest(const ndn::Interest& interest)
   {
-    std::cerr << "\n<< Interest received: " << interest << std::endl;
+    std::cerr << "\n======================================================================================================================" << std::endl;    
+    std::cerr << "\n< Interest received: " << interest << std::endl;
 
     const ndn::Name& name = interest.getName();
     auto incomingFaceIdTag = interest.getTag<ndn::lp::IncomingFaceIdTag>();
@@ -307,22 +322,23 @@ private:
     std::string line;
     auto incomingFaceIdTag = data.getTag<ndn::lp::IncomingFaceIdTag>();
     
-    std::cerr << "\n<< Received data: \n";
+    std::cerr << "\n< Received data start:" << std::endl;
     while (std::getline(newPrefixesFromNeighbor, line)) {
       std::cout << line << std::endl;
       if(line[0]=='/')
         addRoute(line, *incomingFaceIdTag);
     }
+    std::cerr << "< Received data end." << std::endl;
 
     m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
-                                                                std::bind(&Daemon::onStatusTimeout, this));
+                                                                std::bind(&Daemon::onStatusTimeout, this)); 
   }
 
   void
   onTimeout(const ndn::Interest& interest)
   {
     // re-express interest
-    std::cerr << "<< Timeout for " << interest << std::endl;
+    std::cerr << "< Timeout for " << interest << std::endl;
     m_face.expressInterest(interest.getName(),
                            std::bind(&Daemon::onData, this, _2),
                            std::bind(&Daemon::onTimeout, this, _1));
@@ -338,7 +354,6 @@ private:
   std::string m_otherIP;
   uint64_t m_go;
   uint64_t m_counter;
-  int m_tempFaceId;
 };
 
 
@@ -370,24 +385,16 @@ int connectDevices() {
   int go;
 
   while(true) {
-    std::cerr << "\n===========================================================" << std::endl;    
-    std::cerr << "Do you wish to connect as a Group Owner (0) or a Non Group Owner (1)?" << std::endl;
+    std::cerr << "> Do you wish to connect as a Group Owner (0) or a Non Group Owner (1)?" << std::endl;
     std::cin >> go;
 
-    if(go==0) {
-      std::cerr << "You chose to be Group Owner!" << std::endl;
-      break;
-    } else if (go==1) {
-      std::cerr << "You chose to be Non group owner!" << std::endl;
-      break;
+    if(go!=0 && go!=1) {
+      std::cerr << "> Incorrect option selected. Reselect!" << std::endl;
     } else {
-      std::cerr << "Incorrect option selected. Reselect!" << std::endl;
+      break;
     }
   } 
-
-  //system("/home/amar/wpa_supplicant-2.6/wpa_supplicant/wpa_supplicant -Dnl80211 -c p2p.conf -i wlx74da388f5319");
-  //sleep(3);
-  //system("/home/amar/wpa_supplicant-2.6/wpa_supplicant/wpa_cli");
+  //system("/Users/amar/Desktop/a.out 1 2 3");
 
   return go;
 }
@@ -396,10 +403,12 @@ int connectDevices() {
 int
 main(int argc, char** argv)
 {
-  int tempFaceId;
+  std::string interfaceName;
 
-  std::cerr << "Enter face ID for interface wlx74da388f5319: " << std::endl;
-  std::cin >> tempFaceId;
+  std::cerr << "\n========================== NDN over WiFi Direct Protocol ==========================\n" << std::endl;    
+
+  std::cerr << "> Enter wireless interface name you wish to use (should support WiFi Direct): wlx74da388f5319" << std::endl;
+  std::cin >> interfaceName;
 
   try {
     //go is 1 if this device is a Group Owner
@@ -409,14 +418,20 @@ main(int argc, char** argv)
 
     ndn::Face face;
 
+    if(go==1) {
+      std::string temp = ownIP;
+      ownIP = otherIP;
+      otherIP = temp;
+    }
+
     // create daemon instance
-    Daemon daemon(face, ownIP, otherIP, go, tempFaceId);
+    Daemon daemon(face, ownIP, otherIP, go, interfaceName);
 
     // start processing loop (it will block forever)
     face.processEvents();
   }
   catch (const std::exception& e) {
-    std::cerr << "ERROR: " << e.what() << std::endl;
+    std::cerr << "\n> ERROR: " << e.what() << std::endl;
   }
   return 0;
 }
