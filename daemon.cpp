@@ -37,7 +37,7 @@
 class Daemon
 {
 public:
-  Daemon(ndn::Face& face, std::string ownIP, std::string otherIP, uint64_t go)
+  Daemon(ndn::Face& face, std::string ownIP, std::string otherIP, uint64_t go, std::string interfaceName)
     : m_face(face)
     , m_controller(m_face, m_keyChain)
     , m_baseName("/localhop/wifidirect")
@@ -51,34 +51,12 @@ public:
     std::cerr << "Daemon constructor:" << std::endl;
     this->printRole(m_go);
 
-    // Register own IP as a prefix as soon as daemon starts running, so that you can receive the data sent to you.
     std::cerr << "\n===========================================================" << std::endl;    
-    std::cerr << "Registering prefix:" << std::endl;    
-    this->registerPrefix(m_ownIP);
+    std::cerr << "interfaceName: " << interfaceName << std::endl;
 
-    // Add route to other node's IP as soon as daemon starts running (assume that connection is done at this stage.
-    // This allows you to send data to this node, if any application has data for this name.
-    std::cerr << "\n===========================================================" << std::endl;    
-    std::cerr << "Adding route:" << std::endl;    
-    std::string remoteHostIP = "/localhop/wifidirect/"+m_otherIP;
-    std::cerr << "Remote host IP is " << remoteHostIP << std::endl;
-    this->addRoute(remoteHostIP, 0);
+    m_controller.fetch<ndn::nfd::FaceDataset>(std::bind(&Daemon::onFaceStatusReceived, this, _1, interfaceName),
+                                             std::bind(&Daemon::onStatusTimeout, this));
 
-    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
-                                                                std::bind(&Daemon::onStatusTimeout, this));
-
-    m_controller.start<ndn::nfd::FaceUpdateCommand>(
-      ndn::nfd::ControlParameters()
-        .setFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED, true),
-      std::bind(&Daemon::onEnableLocalFieldsSuccess, this),
-      std::bind(&Daemon::onEnableLocalFieldsError, this, _1));
-
-    //if(m_go == 0)
-      m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::sendProbe, this));
-
-    // std::cerr << "\n===========================================================" << std::endl;    
-    // std::cerr << "\n\nAdding face:" << std::endl;    
-    // this->addFace();
   }
 
   void
@@ -148,8 +126,11 @@ public:
     params.setName(prefix);
 
     //set the FaceID of the face created towards the WiFi direct interface
-    if(faceId != 0)
+    if(faceId != (uint64_t)-1) {
+      std::cerr << "ADDING ROUTE WITH PREFIX " << prefix << " to FaceID " << faceId << std::endl;
       params.setFaceId(faceId);
+    }
+
     params.setExpirationPeriod(ndn::time::seconds(100));
 
     ndn::nfd::CommandOptions options;
@@ -173,6 +154,56 @@ public:
                                              std::bind(&Daemon::onStatusTimeout, this));
 
     //m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::requestNfdStatus, this));
+  }
+
+  void
+  onFaceStatusReceived(const std::vector<ndn::nfd::FaceStatus>& status, std::string interfaceName)
+  { 
+    std::cerr << "\nonFaceStatusReceived called" << std::endl;
+    int localFaceID = -1;
+
+    for (auto const& faceEntry : status) {
+      std::size_t found = faceEntry.getLocalUri().compare("dev://"+interfaceName);
+      if(found == 0) {
+        localFaceID = faceEntry.getFaceId();
+        break;
+      }
+    }
+
+    if(localFaceID == -1) {
+      std::cerr << "Error: You entered incorrect interface name: " << interfaceName << std::endl;
+      return;
+    }
+    
+    // Register own IP as a prefix as soon as daemon starts running, so that you can receive the data sent to you.
+    std::cerr << "\n===========================================================" << std::endl;    
+    std::cerr << "Registering prefix:" << std::endl;    
+    this->registerPrefix(m_ownIP);
+
+    // Add route to other node's IP as soon as daemon starts running (assume that connection is done at this stage.
+    // This allows you to send data to this node, if any application has data for this name.
+    std::cerr << "\n===========================================================" << std::endl;    
+    std::cerr << "Adding route:" << std::endl;    
+    std::string remoteHostIP = "/localhop/wifidirect/"+m_otherIP;
+    std::cerr << "Remote host IP is " << remoteHostIP << std::endl;
+    std::cerr << "Local Ethernet FaceID for given interface is: " << localFaceID << std::endl;
+    this->addRoute(remoteHostIP, localFaceID);
+
+    m_controller.fetch<ndn::nfd::ForwarderGeneralStatusDataset>(std::bind(&Daemon::onStatusRetrieved, this, _1),
+                                                                std::bind(&Daemon::onStatusTimeout, this));
+
+    m_controller.start<ndn::nfd::FaceUpdateCommand>(
+      ndn::nfd::ControlParameters()
+        .setFlagBit(ndn::nfd::BIT_LOCAL_FIELDS_ENABLED, true),
+      std::bind(&Daemon::onEnableLocalFieldsSuccess, this),
+      std::bind(&Daemon::onEnableLocalFieldsError, this, _1));
+
+    //if(m_go == 0)
+      m_scheduler.scheduleEvent(ndn::time::seconds(SCAN_FIB_INTERVAL), std::bind(&Daemon::sendProbe, this));
+
+    // std::cerr << "\n===========================================================" << std::endl;    
+    // std::cerr << "\n\nAdding face:" << std::endl;    
+    // this->addFace();
   }
 
   void
@@ -381,6 +412,11 @@ int connectDevices() {
 int
 main(int argc, char** argv)
 {
+  std::string interfaceName;
+
+  std::cerr << "Enter interfaceName as wlx74da388f5319: " << std::endl;
+  std::cin >> interfaceName;
+
   try {
     //go is 1 if this device is a Group Owner
     int go = connectDevices();
@@ -396,7 +432,7 @@ main(int argc, char** argv)
     }
 
     // create daemon instance
-    Daemon daemon(face, ownIP, otherIP, go);
+    Daemon daemon(face, ownIP, otherIP, go, interfaceName);
 
     // start processing loop (it will block forever)
     face.processEvents();
