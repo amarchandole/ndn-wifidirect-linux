@@ -97,6 +97,7 @@ public:
                              });
   }
 
+  //not being used, just ready to be used.
   void
   addFace()
   {
@@ -363,8 +364,8 @@ std::string
 getOwnIP() 
 {
   //char *IP = "fe80::76da:38ff:fe8d:89ab";
-  //std::string IP = "fe80::76da:38ff:fe8f:5319";
-  std::string IP = "GOaaaaaaaaaaaaaaaaaa";
+  std::string IP = "fe80::76da:38ff:fe8f:5319";
+  //std::string IP = "GOaaaaaaaaaaaaaaaaaa";
   return IP;
 }
 
@@ -372,8 +373,8 @@ std::string
 getOtherIP() 
 {
   //char *IP = "fe80::76da:38ff:fe8d:89ab";
-  //std::string IP = "fe80::76da:38ff:fe8d:89ab";
-  std::string IP = "NonGObbbbbbbbbbbbbbb";
+  std::string IP = "fe80::76da:38ff:fe8d:89ab";
+  //std::string IP = "NonGObbbbbbbbbbbbbbb";
   return IP;
 }
 
