@@ -39,6 +39,7 @@
 #include <string>
 #include <cstring>
 #include <cstdio>
+#include <fstream>
 
 class Daemon
 {
@@ -463,22 +464,33 @@ getOwnIP(std::string interfaceName)
   const char * MAC = mac.c_str();
   std::cout<<"MAC is: "<<mac<<std::endl;
   //char *ipv6 = NULL;
-  std::string ipv6 = "";
-  ipv6 = mac_to_ipv6(MAC, ipv6);
+  std::string ownIP = "";
+  ownIP = mac_to_ipv6(MAC, ownIP);
 
   //char *IP = "fe80::76da:38ff:fe8d:89ab";
   //std::string IP = "fe80::76da:38ff:fe8f:5319";
-  //std::string IP = "GOaaaaaaaaaaaaaaaaaa";
-  return IP;
+  return ownIP;
 }
 
 std::string 
 getOtherIP() 
 {
+  std::ifstream fp ("/tmp/ndntemp");
+  std::string mac;
+  if (fp.is_open())
+  {
+    getline(fp, mac); 
+    //std::cout << "Line: "<<line<<std::endl; 
+    fp.close();
+  }
+  else 
+    std::cout << "Unable to open file"; 
+
+  std::string otherIP = "";
+  otherIP = mac_to_ipv6(mac, otherIP);
   //char *IP = "fe80::76da:38ff:fe8d:89ab";
   //std::string IP = "fe80::76da:38ff:fe8d:89ab";
-  //std::string IP = "NonGObbbbbbbbbbbbbbb";
-  return IP;
+  return otherIP;
 }
 
 int connectDevices() {
@@ -496,7 +508,7 @@ int connectDevices() {
   } 
 
   //path to the wpa_cli executable on the system
-  //system("wpa_supplicant-2.6/wpa_cli");
+  system("wpa_supplicant-2.6/wpa_cli");
   return go;
 }
 
@@ -514,7 +526,7 @@ main(int argc, char** argv)
   try {
     //go is 1 if this device is a Group Owner
     int go = connectDevices();
-    std::string ownIP = getOwnIP();
+    std::string ownIP = getOwnIP(interfaceName);
     std::string otherIP = getOtherIP();
 
     ndn::Face face;

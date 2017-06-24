@@ -15,6 +15,8 @@
 #endif /* CONFIG_CTRL_IFACE_UNIX */
 
 #include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "common/cli.h"
 #include "common/wpa_ctrl.h"
 #include "utils/common.h"
@@ -4081,7 +4083,16 @@ static char* mac_to_ipv6(char *mac, char* ipv6)
 
 static void ndn_p2p(void)
 {
+	FILE *fptr;
 	char MAC[18];
+
+	fptr = fopen("program.txt", "w");
+	if(fptr == NULL)
+	{
+	  printf("Error!");
+	  exit(1);
+	}
+
 	wpa_request(ctrl_conn, 1, myp2p_disconnect);
 	
 	printf("Press ENTER to find nearby WiFi-Direct devices:\n");
@@ -4100,6 +4111,13 @@ static void ndn_p2p(void)
 	printf("Enter the MAC address of the WiFi-Direct device you want to connect to:\n");
 	scanf("%s", MAC);
 	myp2p_connect[1] = MAC;
+	fptr = fopen("/tmp/ndntemp", "w");
+	if(fptr == NULL)
+	{
+		printf("Error!");
+	}
+	fprintf(fptr, "%s", MAC);
+	fclose(fptr);
 
 	wpa_request(ctrl_conn, 6, myp2p_connect);
 	
