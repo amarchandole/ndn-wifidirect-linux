@@ -476,7 +476,7 @@ std::string
 getOtherIP() 
 {
   //char *IP = "fe80::76da:38ff:fe8d:89ab";
-  std::string IP = "fe80::76da:38ff:fe8d:89ab";
+  //std::string IP = "fe80::76da:38ff:fe8d:89ab";
   //std::string IP = "NonGObbbbbbbbbbbbbbb";
   return IP;
 }
@@ -495,8 +495,8 @@ int connectDevices() {
     }
   } 
 
-  //system("/Users/amar/Desktop/a.out 1 2 3");
-
+  //path to the wpa_cli executable on the system
+  //system("wpa_supplicant-2.6/wpa_cli");
   return go;
 }
 
